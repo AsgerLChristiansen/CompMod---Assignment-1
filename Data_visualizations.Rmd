@@ -1,0 +1,517 @@
+---
+title: "Data visualizations"
+author: "Jana, Sophia, Asger, Rebecca, Dora"
+date: "2/11/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+require(knitr)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+library(tidyverse)
+ggplot2::theme_set(theme_bw())
+```
+
+```{r load data}
+Samples <- read_csv("Exported_EyeLink_data/Samples_merged.csv", col_types = cols(
+  ParticipantID = col_character(),
+  ParticipantGender = col_character(),
+  EyeTracked = col_character(),
+  Task = col_character(),
+  SearchOrder = col_double(),
+  ForagingType = col_character(),
+  Trial = col_double(),
+  Stimulus = col_character(),
+  Video = col_character(),
+  Time = col_double(),
+  GazeX = col_double(),
+  GazeY = col_double(),
+  PupilSize = col_double(),
+  FixationNo = col_double(),
+  Fix_StartTime = col_double(),
+  Fix_EndTime = col_double(),
+  Fix_Duration = col_double(),
+  Fix_MeanX = col_double(),
+  Fix_MeanY = col_double(),
+  Fix_MeanPupilSize = col_double(),
+  SaccadeNo = col_double(),
+  Sac_StartTime = col_double(),
+  Sac_EndTime = col_double(),
+  Sac_Duration = col_double(),
+  Sac_StartX = col_double(),
+  Sac_StartY = col_double(),
+  Sac_EndX = col_double(),
+  Sac_EndY = col_double(),
+  Sac_PeakVelocity = col_double(),
+  Sac_MeanVelocity = col_double(),
+  Sac_Blink = col_logical(),
+  Sac_Direction = col_character(),
+  Sac_Amplitude = col_double()
+)) 
+
+Samples <- Samples %>% 
+  mutate(GazeY = 1051-GazeY, Fix_MeanY = 1051-Fix_MeanY) %>% 
+  filter(Time<=41202)
+```
+
+## Sanity checks
+
+### Check distribution of fixations
+
+Let's start with density plots
+
+```{r sanity checks fixations}
+# before doing this we must make a summary dataset
+Fix <- Samples[!is.na(Samples$FixationNo),] %>% # remember to remove NAs 
+  group_by(ParticipantID, Trial) %>% 
+  summarize(Fix_Number = max(FixationNo), 
+            Fix_Duration = Fix_Duration[1],
+            Task = Task[1])
+
+# plot density of fixation number
+ggplot(Fix, aes(Fix_Number, color = ParticipantID)) + geom_density() + facet_wrap(.~Task)
+
+# plot density of fixation duration
+ggplot(Fix, aes(Fix_Duration, color = ParticipantID)) + geom_density() + facet_wrap(.~Task)
+```
+
+We can also use histograms:
+
+```{r sanity checks fixations histograms}
+# before doing this we must make a summary dataset
+Fix <- Samples[!is.na(Samples$FixationNo),] %>% # remember to remove NAs 
+  group_by(ParticipantID, Trial) %>% 
+  summarize(Fix_Number = max(FixationNo), 
+            Fix_Duration = Fix_Duration[1],
+            Task = Task[1], ParticipantGender = ParticipantGender[1])
+
+# plot density of fixation number
+ggplot(Fix, aes(Fix_Number, fill = ParticipantGender)) + geom_histogram() + facet_wrap(.~Task)
+
+# plot density of fixation duration
+ggplot(Fix, aes(Fix_Duration, fill = ParticipantGender)) + geom_histogram() + facet_wrap(.~Task)
+```
+
+### Check distribution of saccades
+### - notice anything interesting about the number of saccades?
+
+```{r sanity checks saccades}
+## Check distribution of saccades
+
+# before doing this we must make a summary dataset
+Sac <- Samples[!is.na(Samples$SaccadeNo),] %>% # remember to remove NAs 
+  group_by(ParticipantID, Trial, SaccadeNo) %>% 
+  summarize(Sac_Duration = Sac_Duration[1],
+            Sac_Amplitude = Sac_Amplitude[1],
+            Task = Task[1], ParticipantGender = ParticipantGender[1]) %>% 
+  group_by(ParticipantID, Trial) %>% 
+  summarize(Sac_Number = max(SaccadeNo), Sac_Duration = mean(Sac_Duration), Task = Task[1], ParticipantGender = ParticipantGender[1])
+
+# > Somehow this worked?!
+
+# plot density of saccade number
+ggplot(Sac, aes(Sac_Number, color = ParticipantID)) + geom_density() + facet_wrap(.~Task)
+
+# plot density of saccade duration
+ggplot(Sac, aes(Sac_Duration, color = ParticipantID)) + geom_density() + facet_wrap(.~Task)
+
+# plot density of saccade amplitude
+ggplot(Sac, aes(Sac_Amplitude, color = ParticipantID)) + geom_density() + facet_wrap(.~Task)
+
+# plot density of saccade number by gender
+ggplot(Sac, aes(Sac_Number, color = ParticipantGender)) + geom_density() + facet_wrap(.~Task)
+```
+
+
+### Remove all the data points that fall outside of the screen coordinates (1680, 1050)
+
+```{r remove artefacts}
+# before...
+plot(density(Samples$GazeX, na.rm = TRUE))
+plot(density(Samples$GazeY, na.rm = TRUE))
+
+Samples <- Samples %>% filter(GazeX >= 0 & GazeX <= 1680 & GazeY >= 0 & GazeY <= 1050)
+
+# ...and after
+plot(density(Samples$GazeX, na.rm = TRUE))
+plot(density(Samples$GazeY, na.rm = TRUE))
+```
+
+
+### Check distribution of pupil sizes
+
+```{r}
+# before doing this we must make a summary dataset
+Pup <- Samples[!is.na(Samples$PupilSize),] %>% # remember to remove NAs 
+  group_by(ParticipantID, Trial) %>% 
+  summarize(PupilSize = PupilSize[1], Task = Task[1])
+
+# plot density of pupil sizes
+ggplot(Pup, aes(PupilSize, color = ParticipantID)) + geom_density() + facet_wrap(.~Task)
+```
+
+
+## Visualizations
+
+### Scanpath
+
+```{r}
+## Here I am making the scanpath for one participant in one trial
+x = subset(Samples, ParticipantID ==	'F9_2' & Trial == 10) # FOraging, search, search-order 2
+
+## Let's make a summary dataset
+Fix <- x[!is.na(x$FixationNo),] %>% 
+  group_by(FixationNo) %>% # since I only have one participant and one trial
+  summarize(MeanX = Fix_MeanX[1], MeanY = Fix_MeanY[1], Duration = Fix_Duration[1]) %>% 
+  filter(Duration>=300) # only keep fixations > 300 ms
+
+img <- jpeg::readJPEG('stimuli_Foraging/space_capsules.jpg')  
+img <- grid::rasterGrob(img, width=unit(1, "npc"), height = unit(1,"npc"),
+                        interpolate = FALSE)
+
+ggplot(Fix, aes(MeanX, MeanY, color = Fix$FixationNo)) + 
+  annotation_custom(img, xmin = 0, xmax = 1680, ymin = 0, ymax = 1050) +
+  geom_path(color = "black") +
+  geom_point(size = Fix$Duration*.02, alpha = .8) +
+  ggrepel::geom_text_repel(aes(label = Fix$Duration), size = 3, color = "white") +
+  xlim(0,1680) + ylim(0,1050) + labs(color='Fixation Nr.')
+
+
+## Scanpath for social engagement witout img
+## Here I am making the scanpath for one participant in one trial
+x = subset(Samples, ParticipantID ==	'F1' & Trial == 4) # Social engagement, trial 1
+
+## Let's make a summary dataset
+Fix <- x[!is.na(x$FixationNo),] %>% 
+  group_by(FixationNo) %>% # since I only have one participant and one trial
+  summarize(MeanX = Fix_MeanX[1], MeanY = Fix_MeanY[1], Duration = Fix_Duration[1]) %>% 
+  filter(Duration>=300) # only keep fixations > 300 ms
+
+ggplot(Fix, aes(MeanX, MeanY, color = Fix$FixationNo)) + 
+  geom_path(color = "black") +
+  geom_point(size = Fix$Duration*.02, alpha = .8) +
+  ggrepel::geom_text_repel(aes(label = Fix$Duration), size = 3, color = "white") +
+  xlim(0,1680) + ylim(0,1050) + labs(color='Fixation Nr.')
+
+```
+
+Using a for-loop, make a scanpath for each participant in the Foraging experiment. Use facets to plot the 10
+trials separately for each participant. Use these plots as diagnostic tools in order to answer the following
+questions:
+
+1) Do the data look reasonable and of good quality? Do we have any issues?
+2) Can we differentiate between the two conditions (Count and Search) only by looking at the scanpaths?
+3) Can we spot the trials in which the participants found the star?
+
+```{r}
+# > (So I am guessing that they want one for each trial in the for-loop, not each participant?)
+## > Subsetting the foraging task because it is neater
+Forage = subset(Samples, Task == 'Foraging')
+ # only keep fixations > 300 ms
+
+for (p in unique(Forage$ParticipantID)){
+  x_loop <- subset(Forage, ParticipantID == p)
+  Fix_loop <- x_loop[!is.na(x_loop$FixationNo),] %>% group_by(Trial, FixationNo) %>% dplyr::summarize(MeanX = Fix_MeanX[1], MeanY = Fix_MeanY[1], Duration = Fix_Duration[1]) %>% filter(Duration>=300)
+}
+
+# Let's make loop nr. 1 now.
+
+ggplot(Fix_loop, aes(MeanX, MeanY, color = Fix$FixationNo)) +
+  facet_wrap(Trail) + 
+  geom_path(color = "black") +
+  geom_point(size = Fix_loop$Duration*.02, alpha = .8) +
+  ggrepel::geom_text_repel(aes(label = Fix_loop$Duration), size = 3, color = "white") +
+  xlim(0,1680) + ylim(0,1050) 
+# Let's save the photos for later
+img <- jpeg::readJPEG('stimuli_Foraging/space_capsules.jpg')  
+img <- grid::rasterGrob(img, width=unit(1, "npc"), height = unit(1,"npc"),
+                        interpolate = FALSE)
+
+ggplot(Fix, aes(MeanX, MeanY, color = Fix$FixationNo)) + 
+  annotation_custom(img, xmin = 0, xmax = 1680, ymin = 0, ymax = 1050) +
+  geom_path(color = "black") +
+  geom_point(size = Fix$Duration*.02, alpha = .8) +
+  ggrepel::geom_text_repel(aes(label = Fix$Duration), size = 3, color = "white") +
+  xlim(0,1680) + ylim(0,1050)
+
+```
+
+
+### Heatmap
+
+```{r}
+## Here is a palette of heatmap-friendly colors
+heat_colors <- colorRampPalette(
+  c(
+    "#00007F",
+    "blue",
+    "#007FFF",
+    "cyan",
+    "#7FFF7F",
+    "yellow",
+    "#FF7F00",
+    "red",
+    "#7F0000"
+  )
+)
+```
+
+
+```{r}
+## Here I am making the heatmap for one participant in one trial
+x = subset(Samples, ParticipantID ==	'F9_2' & Trial == 10)
+
+## Let's make a summary dataset
+Fix <- x[!is.na(x$FixationNo),] %>% 
+  group_by(FixationNo) %>% # since I only have one participant and one trial
+  summarize(MeanX = Fix_MeanX[1], MeanY = Fix_MeanY[1], Duration = Fix_Duration[1]) %>% 
+  filter(Duration>=300) # only keep fixations > 300 ms
+
+
+img <- jpeg::readJPEG('stimuli_Foraging/space_capsules.jpg')  
+img <- grid::rasterGrob(img, width=unit(1, "npc"), height = unit(1,"npc"),
+                        interpolate = FALSE) # What does this do? 
+
+ggplot(Fix, aes(MeanX, MeanY, color = Fix$FixationNo)) + 
+  annotation_custom(img, xmin = 0, xmax = 1680, ymin = 0, ymax = 1050) + # This puts in the image
+  # This next one I don't know
+  stat_density2d(geom = "raster", aes(fill = ..density.., alpha = sqrt(sqrt(..density..))), contour = FALSE, n = 1000) +
+  # This one probably has to do with the colors chosen for the map 
+  scale_fill_gradientn(colours = heat_colors(10), trans="sqrt") +
+  # This one makes gradient transparency, I guess? 
+  scale_alpha(range = c(0.1, 0.6)) +
+  # This one limits the x and y axis to the size of the screen
+  xlim(0,1680) + ylim(0,1050) +
+  # This one gets rid of the legend 
+  theme(legend.position = "none")
+
+## Here I am making the heatmap for one participant in one trial (Social engagement)
+x = subset(Samples, ParticipantID ==	'F1_2' & Trial == 10)
+
+## Let's make a summary dataset
+Fix <- x[!is.na(x$FixationNo),] %>% 
+  group_by(FixationNo) %>% # since I only have one participant and one trial
+  summarize(MeanX = Fix_MeanX[1], MeanY = Fix_MeanY[1], Duration = Fix_Duration[1]) %>% 
+  filter(Duration>=300) # only keep fixations > 300 ms
+
+img <- jpeg::readJPEG('stimuli_Foraging/space_capsules.jpg')  
+img <- grid::rasterGrob(img, width=unit(1, "npc"), height = unit(1,"npc"),
+                        interpolate = FALSE)
+
+ggplot(Fix, aes(MeanX, MeanY, color = Fix$FixationNo)) + 
+  annotation_custom(img, xmin = 0, xmax = 1680, ymin = 0, ymax = 1050) +
+  stat_density2d(geom = "raster", aes(fill = ..density.., alpha = sqrt(sqrt(..density..))), contour = FALSE, n = 1000) + 
+  scale_fill_gradientn(colours = heat_colors(10), trans="sqrt") +
+  scale_alpha(range = c(0.1, 0.6)) +
+  xlim(0,1680) + ylim(0,1050) +
+  theme(legend.position = "none")
+```
+
+Excercise: Make a cumulative heatmap for all participants in the Foraging experiment looking at the 'penguins.jpg' image and facet the graph by Foraging Type (Search vs. Count). What do you notice?
+
+```{r}
+# *Modifies exersise a bit for portfolio purposes - I am not doing an area of interest.
+
+# What happens when I attepmt to saparate one trial out from the rest
+x = subset(Samples, Task ==	'Foraging' & ForagingType == 'Search' & Trial == 1)
+
+
+## Let's make a summary dataset
+Fix <- x[!is.na(x$FixationNo),] %>% 
+  group_by(ParticipantID, FixationNo) %>%
+  summarize(MeanX = Fix_MeanX[1], MeanY = Fix_MeanY[1], Duration = Fix_Duration[1]) %>% 
+  filter(Duration>=300) # only keep fixations > 300 ms
+        
+
+img <- jpeg::readJPEG('stimuli_Foraging/sheep.jpg')  
+img <- grid::rasterGrob(img, width=unit(1, "npc"), height = unit(1,"npc"),
+                        interpolate = FALSE)
+
+ggplot(Fix, aes(MeanX, MeanY, color = Fix$FixationNo)) + 
+  annotation_custom(img, xmin = 0, xmax = 1680, ymin = 0, ymax = 1050) +
+  stat_density2d(geom = "raster", aes(fill = ..density.., alpha = sqrt(sqrt(..density..))), contour = FALSE, n = 1000) + 
+  scale_fill_gradientn(colours = heat_colors(10), trans="sqrt") +
+  scale_alpha(range = c(0.1, 0.6)) +
+  xlim(0,1680) + ylim(0,1050) +
+  theme(legend.position = "none")
+
+# Time for the social engagement plots!
+
+# But first I steal Asgers code
+Add_Info <- function(df){
+  
+  df$VidGaze[grepl("dir",df$Video)]='Direct'
+  df$VidGaze[grepl("div",df$Video)]='Diverted'
+  
+  df$Ostension[grepl("+o",df$Video)]='1'
+  df$Ostension[grepl("-o",df$Video)]='0'
+  
+  return(df)
+}
+
+SocSamples <- Add_Info(Samples)
+
+# What happens when I attepmt to saparate one trial out from the rest
+x = subset(SocSamples, Task ==	'SocialEngagement' & Ostension == 1 & Trial == 1) # Vidgaze is diverted
+
+
+## Let's make a summary dataset
+Fix <- x[!is.na(x$FixationNo),] %>% 
+  group_by(ParticipantID, FixationNo) %>%
+  summarize(MeanX = Fix_MeanX[1], MeanY = Fix_MeanY[1], Duration = Fix_Duration[1]) %>% 
+  filter(Duration>=300) # only keep fixations > 300 ms
+
+ggplot(Fix, aes(MeanX, MeanY, color = Fix$FixationNo)) + 
+  stat_density2d(geom = "raster", aes(fill = ..density.., alpha = sqrt(sqrt(..density..))), contour = FALSE, n = 1000) + 
+  scale_fill_gradientn(colours = heat_colors(10), trans="sqrt") +
+  scale_alpha(range = c(0.1, 0.6)) +
+  xlim(0,1680) + ylim(0,1050) +
+  theme(legend.position = "none")
+
+```
+
+
+### AOIs
+
+```{r}
+## Define an AOI for the black sheep
+AOI = c(720, 930, 50, 330)
+      # xmin xmax ymin ymax
+```
+
+```{r}
+## Let's make a summary dataset
+Fix <- Samples[!is.na(Samples$FixationNo),] %>% 
+  group_by(ParticipantID, Trial, FixationNo) %>% # since I only have one participant and one trial
+  summarize(MeanX = Fix_MeanX[1], MeanY = Fix_MeanY[1], Duration = Fix_Duration[1]) %>% 
+  filter(Duration>=300 & # only keep fixations > 300 ms
+         MeanX >= AOI[1] & MeanX <= AOI[2] & MeanY >= AOI[3] & MeanY <= AOI[4])
+
+img <- jpeg::readJPEG('stimuli_Foraging/sheep.jpg')  
+img <- grid::rasterGrob(img, width=unit(1, "npc"), height = unit(1,"npc"),
+                        interpolate = FALSE)
+
+ggplot(Fix, aes(MeanX, MeanY, color = Fix$FixationNo)) + 
+  annotation_custom(img, xmin = 0, xmax = 1680, ymin = 0, ymax = 1050) +
+  # this line draws the rectangle
+  geom_rect(xmin=AOI[1], xmax=AOI[2], ymin=AOI[3], ymax=AOI[4], fill = NA, size = 1, color = 'red') +
+  stat_density2d(geom = "raster", aes(fill = ..density.., alpha = sqrt(sqrt(..density..))), contour = FALSE, n = 1000) + 
+  scale_fill_gradientn(colours = heat_colors(10), trans="sqrt") +
+  scale_alpha(range = c(0.1, 0.6)) +
+  xlim(0,1680) + ylim(0,1050) +
+  theme(legend.position = "none")
+```
+
+Excercise: Make a cumulative heatmap for all participants in the Foraging experiment looking at the 'dolphins.jpg' image and facet the graph by Foraging Type (Search vs. Count) *after having created an AOI*. What do you notice?
+
+```{r}
+
+```
+
+
+
+### Growth curves
+
+Growth curves show how proportional looking at one or more specific AOIs changes over time and across participants. Let's start by definining to AOIs:
+
+```{r}
+## > I don't know where this is suposed to be
+Sac_mdl_tbl <- Samples[!is.na(Samples$SaccadeNo),] %>% # remember to remove NAs 
+  group_by(ParticipantID, Trial, SaccadeNo) %>% 
+  summarize(Sac_Duration = Sac_Duration[1], Sac_Amplitude = mean(Sac_Amplitude, na.rm = TRUE), Task = Task[1], ParticipantGender = ParticipantGender[1], Stimulus = Stimulus[1], ForagingType = ForagingType[1]) %>% 
+  group_by(ParticipantID, Trial) %>% 
+  summarize(Sac_Number = max(SaccadeNo), Sac_Amplitude = Sac_Amplitude[1], Sac_Duration = mean(Sac_Duration), Task = Task[1], ParticipantGender = ParticipantGender[1], Stimulus = Stimulus[1], ForagingType = ForagingType[1])
+
+Sac_mdl_tbl <- Sac_mdl_tbl %>% filter(Task == 'Foraging')
+
+library(lme4)
+
+mdl1 <- lmer(Sac_Amplitude ~ ForagingType + (1 + ForagingType | ParticipantID) + (1 + ForagingType | Stimulus), Sac_mdl_tbl, family = gaussian(link=log))
+summary(mdl1)
+mdl2 <- lmer(Sac_Amplitude ~ ForagingType + (1 + ForagingType | ParticipantID) + (1 + ForagingType | Stimulus), Sac_mdl_tbl, family = gaussian(link=log))
+
+
+## Define an AOI for the black sheep
+AOI1 = c(300, 700, 200, 450)
+AOI2 = c(600, 1100, 600, 750)
+      # xmin xmax ymin ymax
+```
+
+Let's make a summary dataset for fixations and filter the fixations that fall within one of the two AOIs. The plot below shows what the two AOIs look like:
+
+```{r}
+# > Do top-down contraints affect eyemovements? 
+# Outcome = Eyemovements (length of saccades or fixations, numer of fixations, fixation duration)
+# Predictor = Contidion/Task/ top-down vs. bottom up
+
+## Let's make a summary dataset
+Fix <- Samples[!is.na(Samples$FixationNo),] %>% 
+  group_by(ParticipantID, Trial, FixationNo) %>% # since I only have one participant and one trial
+  summarize(MeanX = Fix_MeanX[1], MeanY = Fix_MeanY[1], Duration = Fix_Duration[1],
+            Stimulus = Stimulus[1]) %>% 
+  filter(Duration>=300 & Stimulus=="trees.jpg") %>%
+  mutate(InAOI1 = ifelse(MeanX >= AOI1[1] & MeanX <= AOI1[2] & MeanY >= AOI1[3] & MeanY <= AOI1[4], TRUE, FALSE),
+         InAOI2 = ifelse(MeanX >= AOI2[1] & MeanX <= AOI2[2] & MeanY >= AOI2[3] & MeanY <= AOI2[4], TRUE, FALSE))
+
+img <- jpeg::readJPEG('stimuli_Foraging/trees.jpg')  
+img <- grid::rasterGrob(img, width=unit(1, "npc"), height = unit(1,"npc"),
+                        interpolate = FALSE)
+
+ggplot(Fix, aes(MeanX, MeanY, color = Fix$FixationNo)) + 
+  annotation_custom(img, xmin = 0, xmax = 1680, ymin = 0, ymax = 1050) +
+  # this line draws the rectangle
+  geom_rect(xmin=AOI1[1], xmax=AOI1[2], ymin=AOI1[3], ymax=AOI1[4], fill = NA, size = 1, color = 'red') +
+  annotate(geom = "label", x = 500, y = 450, label = "AOI1", color = "red") +
+  geom_rect(xmin=AOI2[1], xmax=AOI2[2], ymin=AOI2[3], ymax=AOI2[4], fill = NA, size = 1, color = 'blue') +
+  annotate(geom = "label", x = 850, y = 750, label = "AOI2", color = "blue") +
+  #stat_density2d(geom = "raster", aes(fill = ..density.., alpha = sqrt(sqrt(..density..))), contour = FALSE, n = 1000) + 
+  #scale_fill_gradientn(colours = heat_colors(10), trans="sqrt") +
+  #scale_alpha(range = c(0.1, 0.6)) +
+  xlim(0,1680) + ylim(0,1050) +
+  theme(legend.position = "none")
+```
+
+Now let's make a new summary dataset where we compute proportions of fixations in either of the two AOIs divided by total number of fixations, and let's plot this proportion using a smoothing function. Do we notice anything interesting?
+
+```{r}
+Prop <- Fix %>% 
+  group_by(FixationNo) %>% 
+  summarize(AOI1 = sum(InAOI1 == TRUE)/(length(InAOI1)+length(InAOI2))*100,
+            AOI2 = sum(InAOI2 == TRUE)/(length(InAOI1)+length(InAOI2))*100) %>% 
+  gather("AOI", "Proportion", AOI1:AOI2)
+
+ggplot(Prop, aes(FixationNo, Proportion, color = AOI)) +
+  geom_smooth() + ylim(-10,100)
+```
+
+Exercise: Try adding a third AOI and computing proportional looks to it:
+
+```{r}
+
+```
+
+
+#### Growth curves for pupil size
+
+Here we are going to plot the raw data since we are not interested in distinguishing between fixations and saccades — we just want to know the total change in pupil size across a trial:
+
+*Notice the different scales on the x axis. How do we interpret these results?*
+
+```{r}
+ggplot(Samples, aes(Time, PupilSize, color = ParticipantGender)) +
+  geom_smooth() + facet_wrap(.~Task, scales = "free_x")
+```
+
+
+Now I am doing a spagetti plot
+
+```{r}
+# I should isolate the variables I need. 
+For_long <- select(Forage, ParticipantID, ForagingType, )
+Soc_long <- SocSamples %>% filter(Task == "SocialEngagement") %>% select(ParticipantID, VidGaze, Ostension, Fix_MeanPupilSize)
+# Then I should make long format datasets.
+
+
+# Read up on interpreting mixed effect models
+```
+

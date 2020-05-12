@@ -1,0 +1,538 @@
+---
+title: "Data analysis"
+author: "Fabio Trecca"
+date: "2/11/2020"
+output: html_document
+---
+
+## Hypothesis of foraging experiments:
+# Do top-down constraints change eye movements?
+
+# Predictors - Type of task/condition
+
+# Outcome / DV - Eye movement patterns. Fixation/Saccade count, saccade length (amplitude/duration), fixation duration, et cetera.
+
+# Data clusters / Random or Varying effects.
+
+- Participant
+- Stimulus
+
+# Different participants might react differently to each condition, each picture might be structured a little differently, thus interacting differently with the condition.
+
+# So, for instance:
+
+- SaccadeLength ~ Condition + (1+ condition|ID) + (1 + condition|Stimulus)
+
+- Same deal with the other variables.
+
+
+- Remember, you can do 1+ (one condition forms the intercept) or 0+ (different from a constructed intercept based on the trend). For now, let's stick with 1; are the two conditions different?
+
+
+- (g)lmer(formula, dataset, family)
+
+--- poisson distribution, probably, in the case of saccade length.
+
+--- plot residuals!
+
+
+
+
+
+Kinda: - Search Orders (1st or 2nd order). Not really a random effect, since its systematic. But we might want to worry about it regardless, if we had more data.
+
+```{r setup, include=FALSE}
+require(knitr)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+library(tidyverse)
+ggplot2::theme_set(theme_bw())
+```
+
+```{r load data}
+
+Samples <- read_csv("Exported_EyeLink_data/Cleaned/Samples_merged.csv", col_types= cols(
+  ParticipantID = col_character(),
+  ParticipantGender = col_character(),
+  EyeTracked = col_character(),
+  Task = col_character(),
+  SearchOrder = col_double(),
+  ForagingType = col_character(),
+  Trial = col_double(),
+  Stimulus = col_character(),
+  Video = col_character(),
+  Time = col_double(),
+  GazeX = col_double(),
+  GazeY = col_double(),
+  PupilSize = col_double(),
+  FixationNo = col_double(),
+  Fix_StartTime = col_double(),
+  Fix_EndTime = col_double(),
+  Fix_Duration = col_double(),
+  Fix_MeanX = col_double(),
+  Fix_MeanY = col_double(),
+  Fix_MeanPupilSize = col_double(),
+  SaccadeNo = col_double(),
+  Sac_StartTime = col_double(),
+  Sac_EndTime = col_double(),
+  Sac_Duration = col_double(),
+  Sac_StartX = col_double(),
+  Sac_StartY = col_double(),
+  Sac_EndX = col_double(),
+  Sac_EndY = col_double(),
+  Sac_PeakVelocity = col_double(),
+  Sac_MeanVelocity = col_double(),
+  Sac_Blink = col_logical(),
+  Sac_Direction = col_character(),
+  Sac_Amplitude = col_double()
+)) %>%  mutate(GazeY = 1051-GazeY, Fix_MeanY = 1051- Fix_MeanY) %>% filter(Time<=41202)
+
+```
+
+## Question: Does engagement vs Observation matter in social cognition?
+
+## Hypothesis
+
+# Engagement will increase when "interacting" face-to-face with another agent, in a way that social observation doesn't trigger. Increased physiological arousal.
+
+## Operationalization of Task:
+
+# Participant is presented with videos of person doing stuff. Given a sham task (Recognize the actor or object or whatever)
+
+# Direct/Diverted gaze. Ostension/non-Ostension gesture. BOTH are connected to the hypothesis. Interaction effect likely.
+
+# Preprocessing: It is about *what we did to the Eye-Tracking data*. Not how we wrangled it.
+
+- Downsampling is important, for instance.
+
+
+## Heads up, it's the statistical analysis!
+
+# Pupil size is our measure!!!! And that can be modelled in a number of different ways.
+
+# Use FixMean Pupil Size and justify it.
+
+# Always positive. Choose either gaussian or lognormal and MOTIVATE IT.
+
+  - #Explore them with residuals! And predictions! And all that jazz! BEFORE YOU USE SUMMARY!!!!!!!!!!!!!!!!!
+
+
+## Model Specification
+
+# Dir * EB
+
+Use both * and 0 + : for model specification.
+
+# Use varying effects based on participants. Why? Because PEOPLE ARE FUCKING WEIRD!
+
+- People have different baseline pupil sizes, yo.
+- People might get stressed when Andreas is winking at you ;)
+- Variance is primarily across participants. *What the effects are varying according to*. So waht do we expect to vary? *EVERYTHING VARIES WITHIN PARTICIPAnTS CAUSE ITS A WITHIN PARTICIPANTS DESIGN. Baseline, direction, eyebrow, EVERY.THIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIING*
+
+# 1+ dir*EB + (1+D*EB|ID)
+
+# Potential extra effects (UNNEEDED) = The actor (Do we have data on that?). A LA: (1+D*EB|ACTOR). Now, there's only two actors, that means it's never going to converge.
+
+
+## Model interpretation
+
+# Interaction effects first:
+
+- If non-significant, *re-run the model* without the interaction effect! *YOU ARE ALLOWED* to do this if you *report it*. Simpler models, yo, and having the interaction in there actually *removes data* from the main effects.
+
+  - Then look at the main effects.
+  
+- If significant: Plot the effects!!!!! The Beta will be the difference in differences, whether positive or negative, between the condition pairs.
+
+
+### Spaghetti plot. Within aesthetics: group = ID. Also, consider facet wrapping according to direction.
+
+
+
+
+# All sorts of potential random variables. Don't focus on this too mcuh.
+
+#### USE THE ABOVE to motivate the task!
+```{r Getting the Video Data for the Social Engagement analysis}
+
+pacman::p_load(pacman, tidyverse, ggplot2, lme4, DHARMa)
+
+Samples <- read_csv("Exported_EyeLink_data/Cleaned/Samples_merged.csv", col_types= cols(
+  ParticipantID = col_character(),
+  ParticipantGender = col_character(),
+  EyeTracked = col_character(),
+  Task = col_character(),
+  SearchOrder = col_double(),
+  ForagingType = col_character(),
+  Trial = col_double(),
+  Stimulus = col_character(),
+  Video = col_character(),
+  Time = col_double(),
+  GazeX = col_double(),
+  GazeY = col_double(),
+  PupilSize = col_double(),
+  FixationNo = col_double(),
+  Fix_StartTime = col_double(),
+  Fix_EndTime = col_double(),
+  Fix_Duration = col_double(),
+  Fix_MeanX = col_double(),
+  Fix_MeanY = col_double(),
+  Fix_MeanPupilSize = col_double(),
+  SaccadeNo = col_double(),
+  Sac_StartTime = col_double(),
+  Sac_EndTime = col_double(),
+  Sac_Duration = col_double(),
+  Sac_StartX = col_double(),
+  Sac_StartY = col_double(),
+  Sac_EndX = col_double(),
+  Sac_EndY = col_double(),
+  Sac_PeakVelocity = col_double(),
+  Sac_MeanVelocity = col_double(),
+  Sac_Blink = col_logical(),
+  Sac_Direction = col_character(),
+  Sac_Amplitude = col_double()
+)) %>%  mutate(GazeY = 1051-GazeY, Fix_MeanY = 1051- Fix_MeanY) %>% filter(Time<=41202)
+
+Add_Info <- function(df){
+  
+  df$VidGaze[grepl("dir",df$Video)]='1'
+  df$VidGaze[grepl("div",df$Video)]='0'
+  
+  df$Ostension[grepl("+o",df$Video)]='1'
+  df$Ostension[grepl("-o",df$Video)]='0'
+  
+  return(df)
+}
+
+SocSamples <- Add_Info(Samples)
+
+
+SocSamples$VidGaze <- as.factor(SocSamples$VidGaze); SocSamples$VidGaze %>% levels()
+SocSamples$Ostension <- SocSamples$Ostension %>% as.factor() ; SocSamples$Ostension %>% levels()
+
+SocSamples$VidGaze <- relevel(SocSamples$VidGaze, "0")
+SocSamples$Ostension <- relevel(SocSamples$Ostension, "0")
+
+
+write_csv(SocSamples, "Exported_EyeLink_data/Cleaned/SocSamples_merged.csv")
+
+```
+
+```{r Subsetting the Data}
+# Reloading packages (for easy startup within chunk)
+pacman::p_load(pacman, tidyverse, ggplot2, lme4, DHARMa)
+
+#Reloading SocSamples (Remember, column specification is necessary!)
+SocSamples <- read_csv("Exported_EyeLink_data/Cleaned/SocSamples_merged.csv",  col_types= cols(
+  ParticipantID = col_character(),
+  ParticipantGender = col_character(),
+  EyeTracked = col_character(),
+  Task = col_character(),
+  SearchOrder = col_double(),
+  ForagingType = col_character(),
+  Trial = col_double(),
+  Stimulus = col_character(),
+  Video = col_character(),
+  Time = col_double(),
+  GazeX = col_double(),
+  GazeY = col_double(),
+  PupilSize = col_double(),
+  FixationNo = col_double(),
+  Fix_StartTime = col_double(),
+  Fix_EndTime = col_double(),
+  Fix_Duration = col_double(),
+  Fix_MeanX = col_double(),
+  Fix_MeanY = col_double(),
+  Fix_MeanPupilSize = col_double(),
+  VidGaze = col_factor(),
+  Ostension = col_factor())) %>%  mutate(GazeY = 1051-GazeY, Fix_MeanY = 1051- Fix_MeanY) %>% filter(Time<=41202)
+
+?col_factor
+#Now, time to model!
+
+#First, we consider saccades:
+
+SocSub <- SocSamples %>% select(-ForagingType, -Stimulus) %>% subset(Task == "SocialEngagement" & !is.na(FixationNo)) %>%  group_by(ParticipantID, Trial, Ostension, VidGaze, FixationNo) %>% summarize(PupilSize= mean(Fix_MeanPupilSize, na.rm = T))
+
+
+```
+
+
+
+
+```{r modelling}
+pacman::p_load(pacman, tidyverse, ggplot2, lme4, DHARMa, MuMIn)
+
+
+## Heads up, it's the statistical analysis!
+
+# Fix_MeanPupilSize is our measure (of pupil size). Justify the averaging per fixation!
+
+# Remember, PupilSize is always positive.
+
+# So, first we must choose a model type and motivate it.
+
+#Explore them with residuals! And predictions! And all that jazz! BEFORE YOU USE SUMMARY!!!!!!!!!!!!!!!!!
+?lmerTest
+
+## Creating a logNormal and a Gaussian model
+
+# For clarity: PupilSize (dependent variable) is the average pupil size per fixation. Our independent variables are VidGaze (gaze direction of the actor, coded as Diverted = 0, Direct = 1. So, Diverted is intercept.) and Ostension (Not Present = 0, Present = 1. Not Present is Intercept)
+
+# Since we want to take note of any interaction effects, and varying effects according to participants, we include both an interaction term and a varying effect of the whole model by participant.
+
+# Therefore, the model specification generally goes either:
+
+  #   PupilSize ~ VidGaze*Ostension +(1 + VidGaze*Ostension | ParticipantID)
+
+  #or PupilSize ~ 0 + VidGaze:Ostension + (1 + VidGaze:Ostension | ParticipantID)
+
+# If levels on factors are wrong:
+
+SocSub$VidGaze <- relevel(SocSub$VidGaze, "0")
+SocSub$Ostension <- relevel(SocSub$Ostension, "0")
+
+mGaus <-
+  glmer(PupilSize ~ VidGaze*Ostension +(1 + VidGaze*Ostension | ParticipantID),
+  family = gaussian(link = "identity"),
+  data = SocSub)
+
+mLog <-
+   lmerTest::glmer(PupilSize ~ VidGaze*Ostension +(1 + VidGaze*Ostension | ParticipantID),
+    family = gaussian(link = "log"),
+    data = SocSub) # Well, this is singular. Apparantly. But at least it converges.
+
+
+
+#Generate predictions from the models and plot their density, then compare the predictions to the distribution of the actual data. What do you notice?
+
+
+pm1 <- predict(mGaus)
+pm2 <- predict(mLog)
+
+# Comparing the predictions with the actual distribution. Generally it seems pretty good!
+
+plot(density(pm1)) ; plot(density(SocSub$PupilSize))
+
+
+plot(density(pm2)) ; plot(density(log(SocSub$PupilSize)))
+
+# The Y-axis seems to transform, so visually comparing is difficult.
+
+
+#Numericaly compare the model predictions to the actual data (in absolute values) in order to get an idea of how well the model predicts the data:
+
+# So, ideally, this comparison should sum to 0 in a perfect world, yeah?
+
+summary(abs(pm1-SocSub$PupilSize)) # It doesn't.
+
+summary(abs(pm2-SocSub$PupilSize)) # It doesn't *at all*. Possibly because it's comparing log distribution predictions to non-log transformed data.
+
+summary(abs(pm2-log(SocSub$PupilSize))) # This is smaller, but also on a log scale, so wtf does that even mean?
+
+
+#We can compare observed data and model predictions more formally by looking at the residuals of the fitted models. To do this, we use the DHARMa (Residual Diagnostics for HierArchical Regression Models) package:
+
+
+# first we use the simulateResiduals() function to compute the (scaled) residuals of the fitted model
+# n = 250 is the number of simulations that we want DHARMa to run
+dGaus <- simulateResiduals(mGaus, n = 250)
+dLog <- simulateResiduals(mLog, n = 250)
+
+#Now we can plot the residuals for the gaussian and lognormal models and see which model does best. Do we notice any  differences?
+
+
+plot(dGaus)
+plot(dLog)
+
+# Pupil size seems to be well predicted by a gaussian model.
+
+
+#Lastly, we can use the r.squaredGLMM() function from the MuMIn (Multi-Model Inference) package in order to calculate conditional and marginal R^2 of the two models to get a measure of their goodness of fit:
+
+
+r.squaredGLMM(mGaus) # Marginal R^2 sucks, but conditional R^2 is neat as fucc
+r.squaredGLMM(mLog) # This thing is just terrible.
+
+```
+
+```{r Model interpretation!}
+# So now that we have concluded that mLog is bullshit, and we just need a gaussian distribution, we could really just use lmerTest::lmer (because for some reason glmer doesn't give p-values. What the fucc?)
+
+mGaus <-
+  lmerTest::lmer(PupilSize ~ VidGaze*Ostension +(1 + VidGaze*Ostension | ParticipantID),
+  data = SocSub, control = lmerControl(optimizer = "nloptwrap", calc.derivs = FALSE,  optCtrl = list(ftol_abs = 1e-10, xtol_abs = 1e-10, maxeval=10000))) # Got some convergence issues, so we added some stuff to fix that.
+
+
+summary(mGaus) # Non-significant interaction effect! That means... we respecify the model!
+
+mGaus <-
+  lmerTest::lmer(PupilSize ~ VidGaze + Ostension +(1 + VidGaze| ParticipantID) + (1 + Ostension | ParticipantID),
+  data = SocSub, control = lmerControl(optimizer = "nloptwrap", calc.derivs = FALSE,  optCtrl = list(ftol_abs = 1e-10, xtol_abs = 1e-10, maxeval=10000))) # Got some convergence issues, so we added some stuff to fix that.
+
+
+summary(mGaus)
+# Only one significant effect of VidGaze.
+
+# Model converged: Check.
+# Residuals normally distributed: Basically.
+plot(mGaus) # As can also be seen here, this looks fine.
+
+```
+
+## Model Specification
+
+# Dir * EB, AKA VidGaze * Ostension.
+
+Use both * and 0 + : for model specification.
+
+# Use varying effects based on participants. Why? Because PEOPLE ARE FUCKING WEIRD!
+
+- People have different baseline pupil sizes, yo.
+- People might get stressed when Andreas is winking at you ;)
+- Variance is primarily across participants. *What the effects are varying according to*. So waht do we expect to vary? *EVERYTHING VARIES WITHIN PARTICIPANTS* cause its a within participants design. Duh
+
+# 1+ dir*EB + (1+D*EB|ID)
+
+# Potential extra effects (UNNEEDED) = The actor. a la : ( 1 + Dir * EB | actor ). Now, there's only two actors, that means it's never going to converge.
+
+
+## Model interpretation
+
+# Interaction effects first:
+
+- If non-significant, *re-run the model* without the interaction effect! *YOU ARE ALLOWED* to do this if you *report it*. Simpler models, yo, and having the interaction in there actually *removes data* from the main effects.
+
+  - Then look at the main effects.
+  
+- If significant: Plot the effects!!!!! The Beta will be the difference in differences, whether positive or negative, between the condition pairs.
+
+
+### Spaghetti plot. Within aesthetics: group = ID. Also, consider facet wrapping according to direction.
+
+
+
+
+# All sorts of potential random variables. Don't focus on this too mcuh.
+
+#### USE THE ABOVE to motivate the task!
+#(g)lmer(formula, dataset, family)
+#Gaussian, binomial, logNormal, Poisson
+
+```{r}
+
+SampSub <- Samples %>% subset(Task = "Foraging" & !is.na(SaccadeNo)) %>%  group_by(ParticipantID, ForagingType, Stimulus, SaccadeNo) %>% summarize(Sac_Amplitude = mean(Sac_Amplitude, na.rm = T), Sac_Duration = mean(Sac_Duration, na.rm = T))
+
+
+
+SacMod_gauss <- glmer(Sac_Amplitude ~ 1 + ForagingType + (1+ForagingType|ParticipantID) + (1+ForagingType|Stimulus)  , SampSub, family = gaussian(link = identity),control = lmerControl(optimizer = "nloptwrap", calc.derivs = FALSE))
+
+
+
+SacMod_log <- glmer(Sac_Amplitude ~ 1 + ForagingType + (1+ForagingType|ParticipantID) + (1+ForagingType|Stimulus)  , SampSub, family = gaussian(link = log), control = lmerControl(optimizer = "nloptwrap", calc.derivs = FALSE))
+
+summary(SacMod_log)
+
+
+# In order to interpret output in logscale, do this:
+# log(y) = intercept + 0*slope
+# log(y) = intercept + 1*slope
+# exp() on both sides, gives:
+
+exp(.93)
+exp(.93+.54)
+
+#And then you reduce the two results.
+
+4.30-2.53 #Dish seems to be roughly equal to what the summary gives.
+
+
+#To get r^2
+
+MuMIn::r.squaredGLMM(SacMod_log)
+
+
+
+#For residuals:
+
+plot(SacMod_gauss)
+plot(SacMod_log)
+
+dGaus <- DHARMa::simulateResiduals(SacMod_gauss)
+dLog <- DHARMa::simulateResiduals(SacMod_log)
+
+plot(dGaus)
+plot(dLog)
+
+
+plot(predict(SacMod_gauss))
+
+
+
+
+
+###Same deal but for number of fixations
+
+SampSub2 <- Samples %>% subset(Task = "foraging", !is.na(ForagingType)) %>%  group_by(ParticipantID, ForagingType, Stimulus) %>% summarize(FixationNo = max(FixationNo = T))
+
+
+FixNo_Gaussian <- glmer(FixationNo ~ 1 + ForagingType + (1 + ForagingType|ParticipantID) + (1+ForagingType|Stimulus), SampSub2, family = gaussian(link = log), control = lmerControl(optimizer = "nloptwrap", calc.derivs = FALSE))
+
+SacMod_1
+
+isSingular(SacMod_1)
+
+
+
+SacMod_2 <- glmer(Sac_Amplitude ~ 1 + ForagingType + (1+ForagingType|ParticipantID) + (1+ForagingType|Stimulus)  , SampSub, family = gaussian(link = identity),control = lmerControl(optimizer = "nloptwrap", calc.derivs = FALSE))
+
+isSingular(SacMod_2)
+
+
+```
+
+
+
+##Manual Event Detection
+
+
+#There's two main ways to estimate Fixations/Saccades: Spatial (Do measurements fall within a certain boundary?) and Velocity (Is it too fast to be a microsaccade or drift? By what threshold?).
+
+## Spatial versus Velocity are basically the same since the frame is still and such. However, depending on the sampling rate, you want to use one of the other.
+
+### - Additionally, post-saccadic glissades are easier to detect with velocity!
+
+### The machine uses an ordinary threshold. We might be able to estimate a threshold of velocity for each participant! Or over time! Or over trial! And so on and so on and so on.
+
+## Depending on how you set the Velocity Threshold (cause Velocity is never really 0), a microsaccade will be a saccade. SO, if you want to find microsaccades, set the threshold low!
+
+
+```{r manual event detection}
+
+
+Samples <- read_csv("Exported_EyeLink_data/Cleaned/Samples_merged.csv") %>% 
+  mutate(GazeY = 1051-GazeY, Fix_MeanY = 1051-Fix_MeanY) %>% 
+  filter(Time<=41202)
+
+# First, we need to compute velocity (degrees of visual angle / ms)
+
+Samples2 <- Samples %>% mutate(Velocity = abs(sqrt((lead(GazeX)-GazeX)^2 + (lead(GazeY)-GazeY)^2))/(Time)*1000) %>% mutate(Event = ifelse(Velocity >= 1.5, "Saccade", "Fixation")) %>% 
+  filter(Velocity != "Inf") %>%  mutate(Velocity_smooth = (cumsum(Velocity)-lag(cumsum(Velocity), n=20))/20) %>% mutate(Event_smooth = ifelse(Velocity_smooth >= 1.5, "Saccade", "Fixation"))
+
+# Ways to improve:
+
+## Clustering analysis
+
+## Factor analysis
+
+
+ggplot(Samples2, aes())
+
+
+a^2 + b^2 = c^2 
+
+
+sqrt((lead(GazeX)-GazeX)^2 + (lead(GazeY)-GazeY)^2)
+
+
+
+```
